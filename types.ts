@@ -8,11 +8,15 @@ export interface BreathPattern {
 export interface Exercise {
   id: string
   name: string
-  /** 坚持秒数 */
+  /** 每组坚持秒数 */
   durationSec: number
   breath: BreathPattern
   /** 动作要领提示 */
   tip?: string
+  /** 组数（缺省为 1 组；>1 时组间按课程休息秒数插入组间休息） */
+  sets?: number
+  /** 每组目标次数（动态动作）；保持类动作不填，按每组秒数计 */
+  reps?: number
 }
 
 export interface Workout {

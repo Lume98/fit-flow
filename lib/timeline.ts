@@ -6,6 +6,9 @@ export interface Segment {
   type: SegmentType
   /** exercise 片段为当前动作下标；prepare/rest 指向其后的动作下标 */
   exerciseIndex: number
+  /** exercise 片段：当前组号（0 起）与总组数 */
+  setIndex?: number
+  setCount?: number
   /** 距训练开始的偏移毫秒 */
   startMs: number
   durationMs: number
@@ -16,7 +19,7 @@ export interface Timeline {
   totalMs: number
 }
 
-/** 把课程展开为：准备 → 动作 → 休息 → 动作 → … 的线性时间轴 */
+/** 把课程展开为：准备 → 动作（逐组）→ 休息 → 动作 → … 的线性时间轴 */
 export function buildTimeline(w: Workout): Timeline {
   const segments: Segment[] = []
   let cursor = 0
@@ -26,15 +29,32 @@ export function buildTimeline(w: Workout): Timeline {
     cursor += w.prepareSec * 1000
   }
   w.exercises.forEach((e, i) => {
-    segments.push({ type: 'exercise', exerciseIndex: i, startMs: cursor, durationMs: e.durationSec * 1000 })
-    cursor += e.durationSec * 1000
-    if (i < w.exercises.length - 1 && w.restSec > 0) {
-      segments.push({ type: 'rest', exerciseIndex: i + 1, startMs: cursor, durationMs: w.restSec * 1000 })
-      cursor += w.restSec * 1000
+    const setCount = Math.max(1, e.sets ?? 1)
+    for (let s = 0; s < setCount; s++) {
+      segments.push({
+        type: 'exercise',
+        exerciseIndex: i,
+        setIndex: s,
+        setCount,
+        startMs: cursor,
+        durationMs: e.durationSec * 1000,
+      })
+      cursor += e.durationSec * 1000
+      const lastSetOfLastExercise = i === w.exercises.length - 1 && s === setCount - 1
+      if (!lastSetOfLastExercise && w.restSec > 0) {
+        // 组间休息后仍是同一动作，动作间休息后是下一个动作
+        segments.push({ type: 'rest', exerciseIndex: s < setCount - 1 ? i : i + 1, startMs: cursor, durationMs: w.restSec * 1000 })
+        cursor += w.restSec * 1000
+      }
     }
   })
 
   return { segments, totalMs: cursor }
+}
+
+/** 训练总组数（每个动作的 sets 之和） */
+export function totalSetCount(w: Workout): number {
+  return w.exercises.reduce((sum, e) => sum + Math.max(1, e.sets ?? 1), 0)
 }
 
 export type BreathPhase = 'inhale' | 'exhale'

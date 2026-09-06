@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   ChevronRightIcon,
   CopyIcon,
@@ -33,14 +34,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { formatDuration, workoutKey } from '@/lib/util'
+import { buildTimeline, totalSetCount } from '@/lib/timeline'
 import { deleteCustomWorkout, loadCustomWorkouts, loadHistory, loadSettings, saveSettings } from '@/lib/storage'
 import { ensureAudio } from '@/lib/sound'
 import type { HistoryEntry, Settings, Workout } from '@/types'
 import { PRESET_WORKOUTS } from '@/data/presets'
 
+/** 与播放器时间轴一致的总时长（含准备、组间与动作间休息） */
 function workoutTotalSec(w: Workout): number {
-  const rest = w.exercises.length > 1 ? w.restSec * (w.exercises.length - 1) : 0
-  return w.prepareSec + w.exercises.reduce((s, e) => s + e.durationSec, 0) + rest
+  return Math.round(buildTimeline(w).totalMs / 1000)
 }
 
 function isToday(ts: number): boolean {
@@ -76,7 +78,7 @@ function WorkoutCard(props: {
           <TimerIcon data-icon="inline-start" />
           <span>{formatDuration(workoutTotalSec(w))}</span>
           <span>·</span>
-          <span>{w.exercises.length} 个动作</span>
+          <span>{totalSetCount(w)} 组动作</span>
           <span>·</span>
           <span>休息 {w.restSec}s</span>
         </div>
@@ -266,7 +268,12 @@ export function HomeView() {
       )}
 
       <Separator className="my-6" />
-      <footer className="text-center text-xs text-muted-foreground">FitFlow · 数据保存在本浏览器中</footer>
+      <footer className="text-center text-xs text-muted-foreground">
+        FitFlow · 数据保存在本浏览器中 ·{' '}
+        <Link href="/poses" className="underline underline-offset-2 hover:text-foreground">
+          动作图鉴
+        </Link>
+      </footer>
 
       <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>

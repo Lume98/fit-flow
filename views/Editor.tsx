@@ -43,7 +43,7 @@ export function Editor({ initial, isNew, onSave, onCancel }: Props) {
       ...d,
       exercises: [
         ...d.exercises,
-        { id: uid(), name: '', durationSec: 30, breath: { inhaleSec: 2, exhaleSec: 2 }, tip: '' },
+        { id: uid(), name: '', durationSec: 30, breath: { inhaleSec: 2, exhaleSec: 2 }, tip: '', sets: 1 },
       ],
     }))
   }
@@ -80,6 +80,8 @@ export function Editor({ initial, isNew, onSave, onCancel }: Props) {
           inhaleSec: clampInt(e.breath.inhaleSec, 1, 30),
           exhaleSec: clampInt(e.breath.exhaleSec, 1, 30),
         },
+        sets: clampInt(e.sets ?? 1, 1, 10),
+        reps: e.reps && e.reps > 0 ? clampInt(e.reps, 1, 500) : undefined,
       })),
     }
     onSave(cleaned)
@@ -182,7 +184,7 @@ export function Editor({ initial, isNew, onSave, onCancel }: Props) {
               </div>
               <div className="flex gap-2.5">
                 <Field>
-                  <FieldLabel htmlFor={`ex-${e.id}-duration`}>坚持（秒）</FieldLabel>
+                  <FieldLabel htmlFor={`ex-${e.id}-duration`}>坚持（秒/组）</FieldLabel>
                   <Input
                     id={`ex-${e.id}-duration`}
                     type="number"
@@ -192,6 +194,34 @@ export function Editor({ initial, isNew, onSave, onCancel }: Props) {
                     onChange={(ev) => setExercise(e.id, { durationSec: Number(ev.target.value) })}
                   />
                 </Field>
+                <Field>
+                  <FieldLabel htmlFor={`ex-${e.id}-sets`}>组数</FieldLabel>
+                  <Input
+                    id={`ex-${e.id}-sets`}
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={e.sets ?? 1}
+                    onChange={(ev) => setExercise(e.id, { sets: Number(ev.target.value) })}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`ex-${e.id}-reps`}>次/组（可选）</FieldLabel>
+                  <Input
+                    id={`ex-${e.id}-reps`}
+                    type="number"
+                    min={1}
+                    max={500}
+                    placeholder="如 12"
+                    value={e.reps ?? ''}
+                    onChange={(ev) => {
+                      const n = Number(ev.target.value)
+                      setExercise(e.id, { reps: Number.isFinite(n) && n > 0 ? Math.round(n) : undefined })
+                    }}
+                  />
+                </Field>
+              </div>
+              <div className="flex gap-2.5">
                 <Field>
                   <FieldLabel htmlFor={`ex-${e.id}-inhale`}>吸气（秒）</FieldLabel>
                   <Input

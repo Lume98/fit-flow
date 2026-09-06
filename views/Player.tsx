@@ -4,15 +4,17 @@ import { useEffect, useMemo, useRef } from 'react'
 import { PartyPopperIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XIcon } from 'lucide-react'
 import { BreathCircle } from '@/components/BreathCircle'
 import { CountdownRing } from '@/components/CountdownRing'
+import { ExerciseFigure } from '@/components/ExerciseFigure'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { usePlayer } from '@/hooks/usePlayer'
 import { breathStateAt, findSegmentIndex } from '@/lib/timeline'
+import { getPoseEntry } from '@/data/poses'
 import { cancelSpeech, speak } from '@/lib/speech'
 import { ensureAudio, playBreathCue, playFinish, playSegmentChange, playTick } from '@/lib/sound'
 import { formatDuration } from '@/lib/util'
-import type { HistoryEntry, Settings, Workout } from '@/types'
+import type { Exercise, HistoryEntry, Settings, Workout } from '@/types'
 
 interface Props {
   workout: Workout
@@ -20,6 +22,15 @@ interface Props {
   onExit: () => void
   /** 完整跑完时回调，用于记录训练历史 */
   onComplete: (entry: HistoryEntry) => void
+}
+
+/** 动作锻炼计划文案：组数 × 次数 / 每组保持时长 */
+function planText(exercise: Exercise, setIndex?: number, setCount?: number): string {
+  const parts: string[] = []
+  if (setCount && setCount > 1) parts.push(`第 ${(setIndex ?? 0) + 1}/${setCount} 组`)
+  if (exercise.reps && exercise.reps > 0) parts.push(`${exercise.reps} 次/组`)
+  else parts.push(`保持 ${exercise.durationSec} 秒`)
+  return parts.join(' · ')
 }
 
 export function Player({ workout, settings, onExit, onComplete }: Props) {
@@ -38,17 +49,18 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
   const breath = exercise ? breathStateAt(exercise, segElapsed) : null
   const breathKey = breath ? `${segIdx}-${breath.cycleIndex}-${breath.phase}` : ''
 
-  /** 下一个要做的动作（准备/休息片段预告用） */
-  const nextExercise = useMemo(() => {
-    if (seg.type === 'exercise') return workout.exercises[seg.exerciseIndex + 1] ?? null
-    return workout.exercises[seg.exerciseIndex] ?? null
-  }, [seg, workout])
+  /** 下一个要执行的动作片段（准备/休息预告用，含组号信息） */
+  const nextExSeg = useMemo(
+    () => timeline.segments.find((s) => s.type === 'exercise' && s.startMs > seg.startMs) ?? null,
+    [timeline, seg.startMs],
+  )
+  const nextExercise = nextExSeg ? (workout.exercises[nextExSeg.exerciseIndex] ?? null) : null
 
   function handleFinish() {
     onComplete({
       workoutName: workout.name,
       totalSec: Math.round(timeline.totalMs / 1000),
-      exerciseCount: workout.exercises.length,
+      exerciseCount: timeline.segments.filter((s) => s.type === 'exercise').length,
       completedAt: Date.now(),
     })
   }
@@ -60,7 +72,8 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
     if (prevSegIdx.current === segIdx) return
     prevSegIdx.current = segIdx
     if (seg.type === 'exercise' && exercise) {
-      speak(`${exercise.name}，开始`, { volume: settings.voiceEnabled ? settings.volume : 0 })
+      const setNo = seg.setCount && seg.setCount > 1 ? `，第${(seg.setIndex ?? 0) + 1}组` : ''
+      speak(`${exercise.name}${setNo}，开始`, { volume: settings.voiceEnabled ? settings.volume : 0 })
       playSegmentChange(settings.soundEnabled ? settings.volume : 0)
     } else if (seg.type === 'prepare') {
       speak(`准备，${workout.name}`, { volume: settings.voiceEnabled ? settings.volume : 0 })
@@ -89,8 +102,13 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
     prevTick.current = secondsLeft
     if (secondsLeft >= 1 && secondsLeft <= 3) {
       playTick(settings.soundEnabled ? settings.volume : 0)
-      if (seg.type !== 'exercise' && nextExercise && secondsLeft === 3) {
-        speak(`下一个：${nextExercise.name}`, { volume: settings.voiceEnabled ? settings.volume : 0 })
+      if (seg.type !== 'exercise' && nextExercise && nextExSeg && secondsLeft === 3) {
+        const isNextSet =
+          nextExSeg.setCount !== undefined && nextExSeg.setCount > 1 && (nextExSeg.setIndex ?? 0) > 0
+        const upcoming = isNextSet
+          ? `${nextExercise.name}，第${(nextExSeg.setIndex ?? 0) + 1}组`
+          : nextExercise.name
+        speak(`下一个：${upcoming}`, { volume: settings.voiceEnabled ? settings.volume : 0 })
       }
     }
   })
@@ -205,18 +223,50 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4">
-        <div className="text-center text-2xl font-bold sm:text-3xl">
-          {seg.type === 'exercise' && exercise ? exercise.name : seg.type === 'rest' ? '休息' : '即将开始'}
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
+        <div className="text-center">
+          <div className="text-2xl font-bold sm:text-3xl">
+            {seg.type === 'exercise' && exercise ? exercise.name : seg.type === 'rest' ? '休息' : '即将开始'}
+          </div>
+          {seg.type === 'exercise' && exercise && (
+            <div className="mt-1 text-sm font-medium text-primary">{planText(exercise, seg.setIndex, seg.setCount)}</div>
+          )}
         </div>
-        <CountdownRing remainingMs={segRemaining} durationMs={seg.durationMs}>
+        <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+          {seg.type === 'exercise' && exercise ? (
+            <ExerciseFigure
+              className="h-full max-h-60 w-auto"
+              animation={getPoseEntry(exercise).animation}
+              breath={exercise.breath}
+              elapsedMs={segElapsed}
+            />
+          ) : (
+            nextExercise && (
+              <ExerciseFigure
+                className="h-full max-h-60 w-auto opacity-40 transition-opacity"
+                animation={getPoseEntry(nextExercise).animation}
+                breath={{ inhaleSec: 2, exhaleSec: 2 }}
+                elapsedMs={segElapsed}
+              />
+            )
+          )}
+        </div>
+        <CountdownRing
+          remainingMs={segRemaining}
+          durationMs={seg.durationMs}
+          className="w-[min(200px,48vw)]"
+        >
           {ringCenter}
         </CountdownRing>
         <div className="min-h-6 max-w-[90%] text-center text-sm leading-relaxed text-muted-foreground">
           {seg.type === 'exercise' && exercise?.tip
             ? exercise.tip
-            : nextExercise
-              ? `下一个：${nextExercise.name}`
+            : nextExercise && nextExSeg
+              ? nextExSeg.setCount !== undefined &&
+                nextExSeg.setCount > 1 &&
+                (nextExSeg.setIndex ?? 0) > 0
+                ? `下一组：${nextExercise.name}（第 ${(nextExSeg.setIndex ?? 0) + 1} 组）`
+                : `下一个：${nextExercise.name}`
               : ''}
         </div>
         {!running && (
