@@ -1,12 +1,18 @@
+'use client'
+
 import { useEffect, useMemo, useRef } from 'react'
-import { BreathCircle } from '../components/BreathCircle'
-import { CountdownRing } from '../components/CountdownRing'
-import { usePlayer } from '../hooks/usePlayer'
-import { breathStateAt, findSegmentIndex } from '../lib/timeline'
-import { cancelSpeech, speak } from '../lib/speech'
-import { ensureAudio, playBreathCue, playFinish, playSegmentChange, playTick } from '../lib/sound'
-import { formatDuration } from '../lib/util'
-import type { HistoryEntry, Settings, Workout } from '../types'
+import { PartyPopperIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XIcon } from 'lucide-react'
+import { BreathCircle } from '@/components/BreathCircle'
+import { CountdownRing } from '@/components/CountdownRing'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { usePlayer } from '@/hooks/usePlayer'
+import { breathStateAt, findSegmentIndex } from '@/lib/timeline'
+import { cancelSpeech, speak } from '@/lib/speech'
+import { ensureAudio, playBreathCue, playFinish, playSegmentChange, playTick } from '@/lib/sound'
+import { formatDuration } from '@/lib/util'
+import type { HistoryEntry, Settings, Workout } from '@/types'
 
 interface Props {
   workout: Workout
@@ -62,7 +68,7 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
     } else if (seg.type === 'rest') {
       speak('休息一下', { volume: settings.voiceEnabled ? settings.volume : 0 })
     }
-  }, [segIdx, seg.type, exercise, workout.name, settings, finished])
+  })
 
   // ── 提示逻辑：呼吸相位切换 ──────────────────────────
   const prevBreathKey = useRef('')
@@ -73,7 +79,7 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
     const word = breath.phase === 'inhale' ? '吸气' : '呼气'
     speak(word, { volume: settings.voiceEnabled ? settings.volume : 0 })
     playBreathCue(breath.phase, settings.soundEnabled ? settings.volume : 0)
-  }, [breathKey, breath, settings, finished])
+  })
 
   // ── 提示逻辑：最后 3 秒哔声 + 下一动作预告 ───────────
   const prevTick = useRef(-1)
@@ -87,7 +93,7 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
         speak(`下一个：${nextExercise.name}`, { volume: settings.voiceEnabled ? settings.volume : 0 })
       }
     }
-  }, [secondsLeft, seg.type, nextExercise, settings, finished])
+  })
 
   // ── 训练完成提示 ─────────────────────────────────
   useEffect(() => {
@@ -97,7 +103,7 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
     speak('训练完成，辛苦了！', { volume: settings.voiceEnabled ? settings.volume : 0 })
   }, [finished, settings])
 
-  // ── 键盘快捷键（桌面端） ──────────────────────────
+  // ── 键盘快捷键（桌面端）：回调均为稳定引用，仅绑定一次 ──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -108,42 +114,50 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [player])
+  }, [player.togglePause, player.next, player.prev])
 
   // ── 结束页 ──────────────────────────────────────
   if (finished) {
     return (
-      <div className="player-screen done-screen">
-        <div className="done-emoji">🎉</div>
-        <h1>训练完成！</h1>
-        <p className="done-sub">坚持就是胜利，别忘了拉伸放松</p>
-        <div className="done-stats">
-          <div className="stat">
-            <div className="stat-num">{formatDuration(timeline.totalMs / 1000)}</div>
-            <div className="stat-label">总用时</div>
-          </div>
-          <div className="stat">
-            <div className="stat-num">{workout.exercises.length}</div>
-            <div className="stat-label">完成动作</div>
-          </div>
-          <div className="stat">
-            <div className="stat-num">{workout.name}</div>
-            <div className="stat-label">课程</div>
-          </div>
+      <div className="player-screen fixed inset-0 z-10 flex flex-col items-center justify-center gap-3 p-6 text-center">
+        <div className="flex size-20 items-center justify-center rounded-full bg-primary/15">
+          <PartyPopperIcon aria-hidden className="size-10 text-primary" />
         </div>
-        <div className="done-actions">
-          <button className="btn btn-secondary" onClick={onExit}>
+        <h1 className="text-3xl font-bold">训练完成！</h1>
+        <p className="text-muted-foreground">坚持就是胜利，别忘了拉伸放松</p>
+        <div className="my-6 flex flex-wrap justify-center gap-3">
+          <Card className="min-w-28 gap-0 py-4">
+            <CardContent className="flex flex-col items-center px-4">
+              <span className="text-xl font-bold text-primary">{formatDuration(timeline.totalMs / 1000)}</span>
+              <span className="mt-1 text-xs text-muted-foreground">总用时</span>
+            </CardContent>
+          </Card>
+          <Card className="min-w-28 gap-0 py-4">
+            <CardContent className="flex flex-col items-center px-4">
+              <span className="text-xl font-bold text-primary">{workout.exercises.length}</span>
+              <span className="mt-1 text-xs text-muted-foreground">完成动作</span>
+            </CardContent>
+          </Card>
+          <Card className="min-w-28 gap-0 py-4">
+            <CardContent className="flex max-w-44 flex-col items-center px-4">
+              <span className="line-clamp-2 text-xl font-bold text-primary">{workout.name}</span>
+              <span className="mt-1 text-xs text-muted-foreground">课程</span>
+            </CardContent>
+          </Card>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="secondary" onClick={onExit}>
             返回首页
-          </button>
-          <button
-            className="btn btn-primary"
+          </Button>
+          <Button
+            className="btn-brand"
             onClick={() => {
               ensureAudio()
               player.restart()
             }}
           >
             再来一次
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -158,53 +172,75 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
           phaseDurationMs={breath.phaseDurationMs}
           paused={!running}
         />
-        <div className={`phase-label ${breath.phase === 'inhale' ? 'phase-inhale' : 'phase-exhale'}`}>
+        <div
+          className={`z-1 mb-3 text-xl font-bold tracking-[0.4em] ${breath.phase === 'inhale' ? 'text-inhale' : 'text-exhale'}`}
+        >
           {breath.phase === 'inhale' ? '吸气' : '呼气'}
         </div>
         <div className="seconds-num">{secondsLeft}</div>
       </>
     ) : (
       <>
-        <div className="seg-type-label">{seg.type === 'prepare' ? '准备' : '休息'}</div>
+        <div className="mb-3 text-lg tracking-[0.4em] text-muted-foreground">
+          {seg.type === 'prepare' ? '准备' : '休息'}
+        </div>
         <div className="seconds-num">{secondsLeft}</div>
       </>
     )
 
   return (
-    <div className="player-screen">
-      <div className="player-top">
-        <button className="icon-btn" onClick={onExit} aria-label="退出训练">
-          ✕
-        </button>
-        <div className="overall-bar">
-          <div className="overall-fill" style={{ width: `${(elapsedMs / timeline.totalMs) * 100}%` }} />
+    <div className="player-screen fixed inset-0 z-10 flex flex-col pt-[calc(16px+env(safe-area-inset-top))] px-4 pb-[calc(20px+env(safe-area-inset-bottom))]">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={onExit} aria-label="退出训练">
+          <XIcon />
+        </Button>
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-brand-a to-brand-b transition-[width] duration-400 ease-linear"
+            style={{ width: `${(elapsedMs / timeline.totalMs) * 100}%` }}
+          />
         </div>
-        <div className="overall-time">{formatDuration(elapsedMs / 1000)}</div>
+        <div className="min-w-11 text-right text-xs text-muted-foreground tabular-nums">
+          {formatDuration(elapsedMs / 1000)}
+        </div>
       </div>
 
-      <div className="player-main">
-        <div className="exercise-name">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4">
+        <div className="text-center text-2xl font-bold sm:text-3xl">
           {seg.type === 'exercise' && exercise ? exercise.name : seg.type === 'rest' ? '休息' : '即将开始'}
         </div>
-        <CountdownRing remainingMs={segRemaining} durationMs={seg.durationMs} size={300}>
+        <CountdownRing remainingMs={segRemaining} durationMs={seg.durationMs}>
           {ringCenter}
         </CountdownRing>
-        <div className="exercise-tip">
-          {seg.type === 'exercise' && exercise?.tip ? `💡 ${exercise.tip}` : nextExercise ? `下一个：${nextExercise.name}` : ''}
+        <div className="min-h-6 max-w-[90%] text-center text-sm leading-relaxed text-muted-foreground">
+          {seg.type === 'exercise' && exercise?.tip
+            ? exercise.tip
+            : nextExercise
+              ? `下一个：${nextExercise.name}`
+              : ''}
         </div>
-        {!running && <div className="paused-badge">已暂停</div>}
+        {!running && (
+          <Badge variant="outline" className="border-exhale/40 bg-exhale/15 text-exhale">
+            已暂停
+          </Badge>
+        )}
       </div>
 
-      <div className="player-controls">
-        <button className="ctrl-btn" onClick={player.prev} aria-label="上一动作">
-          ⏮
-        </button>
-        <button className="ctrl-btn ctrl-main" onClick={player.togglePause} aria-label={running ? '暂停' : '继续'}>
-          {running ? '⏸' : '▶'}
-        </button>
-        <button className="ctrl-btn" onClick={player.next} aria-label="跳过">
-          ⏭
-        </button>
+      <div className="flex items-center justify-center gap-5 pb-[env(safe-area-inset-bottom)]">
+        <Button variant="secondary" size="icon" className="size-16 rounded-full" onClick={player.prev} aria-label="上一动作">
+          <SkipBackIcon className="size-6!" />
+        </Button>
+        <Button
+          size="icon"
+          className="btn-brand size-21 rounded-full"
+          onClick={player.togglePause}
+          aria-label={running ? '暂停' : '继续'}
+        >
+          {running ? <PauseIcon className="size-9!" /> : <PlayIcon className="size-9!" />}
+        </Button>
+        <Button variant="secondary" size="icon" className="size-16 rounded-full" onClick={player.next} aria-label="跳过">
+          <SkipForwardIcon className="size-6!" />
+        </Button>
       </div>
     </div>
   )

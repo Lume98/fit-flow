@@ -13,3 +13,8 @@ export function uid(): string {
     ? crypto.randomUUID()
     : `id-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
+
+/** 预设/自定义课程在 URL 中的 key 编码 */
+export function workoutKey(w: { id: string; preset?: boolean }): string {
+  return w.preset ? `preset:${w.id}` : `custom:${w.id}`
+}
