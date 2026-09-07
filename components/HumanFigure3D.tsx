@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { ContactShadows, OrbitControls, PerspectiveCamera } from '@react-three/drei'
+import { ContactShadows, OrbitControls, PerspectiveCamera, useGLTF } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { RotateCcwIcon, OrbitIcon } from 'lucide-react'
 import { computePoseFrame, type PoseAnimation } from '@/lib/figure'
-import { PIECE_SPECS, PROFILES, poseTo3D, resolvePieces, type Vec3 } from '@/lib/human3d'
+import { captureRest, collectBones, applyRetarget, type BoneBind, type BoneKey } from '@/lib/retarget'
 import type { BreathPattern } from '@/types'
 import { Button } from '@/components/ui/button'
 import { ExerciseFigure } from '@/components/ExerciseFigure'
@@ -30,36 +30,6 @@ export function useBrandColors(): [string, string, string] {
     return () => ob.disconnect()
   }, [])
   return colors
-}
-
-// ── 共享几何体（单位尺寸，靠 mesh scale 适配各部位）────
-const BALL_GEO = new THREE.SphereGeometry(1, 32, 24)
-
-/** 肌肉轮廓旋转曲面缓存：轮廓系数 → 单位长度 lathe 几何（平移居中到原点，mesh 按中点+轴向摆放） */
-const limbGeoCache = new Map<string, THREE.LatheGeometry>()
-function getLimbGeometry(profile: string): THREE.LatheGeometry {
-  let geo = limbGeoCache.get(profile)
-  if (!geo) {
-    const coefficients = PROFILES[profile] ?? [1, 1]
-    const pts = coefficients.map(
-      (c, i) => new THREE.Vector2(Math.max(c, 0), i / (coefficients.length - 1)),
-    )
-    geo = new THREE.LatheGeometry(pts, 32)
-    // lathe 默认 y∈[0,1]，平移到以原点为中心，与中点摆放逻辑一致
-    geo.translate(0, -0.5, 0)
-    limbGeoCache.set(profile, geo)
-  }
-  return geo
-}
-
-const UP = new THREE.Vector3(0, 1, 0)
-const scratchDir = new THREE.Vector3()
-const scratchQuat = new THREE.Quaternion()
-
-function quatArray(dir: Vec3): [number, number, number, number] {
-  scratchDir.set(dir[0], dir[1], dir[2])
-  scratchQuat.setFromUnitVectors(UP, scratchDir)
-  return scratchQuat.toArray() as [number, number, number, number]
 }
 
 export function ModelLights() {
@@ -106,8 +76,33 @@ export interface FigureContentProps {
   shadow?: boolean
 }
 
+/** GLB 人体资源路径（部署到 /fit-flow 子路径时由 NEXT_PUBLIC_BASE_PATH 前缀修正） */
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
+const HUMAN_URL = `${BASE}/models/human.glb`
+
 /**
- * 3D 人体模型场景内容：由 2D 姿态数据驱动，圆柱四肢 + 球关节拼成有体积感的人体。
+ * 克隆 scene 后，SkinnedMesh.skeleton 仍指向源场景的骨骼（clone 不深拷贝骨骼引用）。
+ * 这里把克隆出的每个 SkinnedMesh 的 skeleton 重建为指向克隆骨骼的骨架，使重定向生效。
+ * 注意：不要传 mesh.matrixWorld 给 bind —— 克隆初期矩阵可能未更新，会烘焙错误偏移
+ * （R3F 环境尤为如此）。绑定到骨骼当前 rest 姿态即可。
+ */
+function rebindSkeleton(cloned: THREE.Object3D): void {
+  const cloneBones = new Map<string, THREE.Bone>()
+  cloned.traverse((o) => {
+    if ((o as THREE.Bone).isBone) cloneBones.set(o.name, o as THREE.Bone)
+  })
+  cloned.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh
+    if (!mesh.isSkinnedMesh) return
+    const bones = mesh.skeleton.bones.map((b) => cloneBones.get(b.name) ?? b)
+    const skeleton = new THREE.Skeleton(bones, mesh.skeleton.boneInverses)
+    mesh.bind(skeleton, new THREE.Matrix4())
+  })
+}
+
+/**
+ * 3D 人体模型场景内容：加载 GLB 人体，用骨骼重定向驱动姿态（见 lib/retarget.ts）。
+ * 每帧按 computePoseFrame 计算当前姿态并应用重定向，配合呼吸节拍循环。
  * 可放进独立 Canvas，也可放进 drei <View> 共享画布。
  */
 export function FigureContent({
@@ -118,42 +113,38 @@ export function FigureContent({
   spin = 0,
   shadow = false,
 }: FigureContentProps) {
-  const frame = useMemo(
-    () => computePoseFrame(animation, breath, elapsedMs),
-    [animation, breath, elapsedMs],
-  )
-  const pieces = useMemo(
-    () => resolvePieces(poseTo3D(frame.pose, frame.view)),
-    [frame],
-  )
-
-  const materials = useMemo(() => {
-    const ca = new THREE.Color(colors[0])
-    const cb = new THREE.Color(colors[1])
-    return PIECE_SPECS.map(
-      (spec) =>
-        new THREE.MeshPhysicalMaterial({
-          color: ca.clone().lerp(cb, spec.t),
-          roughness: 0.42,
-          metalness: 0.05,
-          clearcoat: 0.45,
-          clearcoatRoughness: 0.35,
-        }),
-    )
-  }, [colors])
-  useEffect(
-    () => () => {
-      materials.forEach((m) => m.dispose())
-    },
-    [materials],
-  )
-
+  const { scene: sourceScene } = useGLTF(HUMAN_URL)
+  // useGLTF 返回共享缓存的 scene，多实例（播放器当前动作+预览、图鉴 21 个 View）同时驱动会互相覆盖。
+  // 因此每个实例克隆一份 scene，并重建蒙皮骨骼（clone 后的 SkinnedMesh.skeleton 仍指向原场景骨骼，
+  // 必须重新构建指向克隆骨骼的 Skeleton，否则重定向不生效）。
+  const scene = useMemo(() => {
+    const s = sourceScene.clone(true)
+    rebindSkeleton(s)
+    return s
+  }, [sourceScene])
+  const bindRef = useRef<Map<BoneKey, BoneBind> | null>(null)
   const groupRef = useRef<THREE.Group>(null)
+
+  // 捕获 rest 基准：场景挂载后、任何姿态应用前，记录骨骼的 rest 局部旋转
+  useEffect(() => {
+    scene.updateMatrixWorld(true)
+    if (!bindRef.current) {
+      bindRef.current = captureRest(collectBones(scene))
+      scene.updateMatrixWorld(true)
+    }
+  }, [scene])
+
+  // 每帧按动画 + 呼吸计算当前姿态并应用重定向，配合呼吸节拍循环；自转也在帧循环里做。
   useFrame((_, delta) => {
+    if (bindRef.current) {
+      const frame = computePoseFrame(animation, breath, elapsedMs)
+      applyRetarget(frame.pose, frame.view, bindRef.current)
+      scene.updateMatrixWorld(true)
+    }
     if (spin !== 0 && groupRef.current) groupRef.current.rotation.y += delta * spin
   })
 
-  const groundY = frame.ground === null ? null : 0.5 - frame.ground
+  const groundY = 0.005
 
   return (
     <>
@@ -170,21 +161,8 @@ export function FigureContent({
           color="#334155"
         />
       )}
-      <group ref={groupRef}>
-        {pieces.map((p, i) => (
-          <mesh
-            key={p.id}
-            geometry={p.kind === 'limb' ? getLimbGeometry(p.profile) : BALL_GEO}
-            material={materials[i]}
-            position={p.pos}
-            quaternion={quatArray(p.dir)}
-            scale={
-              p.kind === 'limb'
-                ? [p.r, p.len, p.r]
-                : [p.r * p.squash[0], p.r * p.squash[1], p.r * p.squash[2]]
-            }
-          />
-        ))}
+      <group ref={groupRef} rotation-y={Math.PI}>
+        <primitive object={scene} />
       </group>
     </>
   )
@@ -245,29 +223,31 @@ export default function HumanFigure3D({
         gl={{ alpha: true, antialias: true }}
         style={{ position: 'absolute', inset: 0 }}
       >
-        <PerspectiveCamera makeDefault fov={34} near={0.05} far={30} position={[0, 0.2, 2]} />
+        <PerspectiveCamera makeDefault fov={34} near={0.05} far={30} position={[0, 0.9, 3.2]} />
         <OrbitControls
           ref={controlsRef}
           makeDefault
-          target={[0, 0.02, 0]}
+          target={[0, 0.88, 0]}
           enablePan={false}
           enableDamping
           dampingFactor={0.12}
           rotateSpeed={0.85}
           zoomSpeed={0.8}
-          minDistance={1.1}
-          maxDistance={4.5}
+          minDistance={1.5}
+          maxDistance={5.5}
           autoRotate={interactive && autoRotate}
           autoRotateSpeed={2.4}
         />
-        <FigureContent
-          animation={animation}
-          breath={breath}
-          elapsedMs={elapsedMs}
-          colors={colors}
-          spin={interactive && autoRotate ? 0 : spin}
-          shadow
-        />
+        <Suspense fallback={null}>
+          <FigureContent
+            animation={animation}
+            breath={breath}
+            elapsedMs={elapsedMs}
+            colors={colors}
+            spin={interactive && autoRotate ? 0 : spin}
+            shadow
+          />
+        </Suspense>
       </Canvas>
       {interactive && (
         <>

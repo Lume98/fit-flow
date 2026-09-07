@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Canvas } from '@react-three/fiber'
 import { PerspectiveCamera, View } from '@react-three/drei'
@@ -35,14 +35,16 @@ function GalleryFigure({
 }) {
   return (
     <View className="size-full">
-      <PerspectiveCamera makeDefault fov={34} near={0.05} far={30} position={[0, 0.2, 2]} />
-      <FigureContent
-        animation={entry.animation}
-        breath={entry.breath}
-        elapsedMs={elapsedMs}
-        colors={colors}
-        spin={spin}
-      />
+      <PerspectiveCamera makeDefault fov={34} near={0.05} far={30} position={[0, 0.9, 3.2]} />
+      <Suspense fallback={null}>
+        <FigureContent
+          animation={entry.animation}
+          breath={entry.breath}
+          elapsedMs={elapsedMs}
+          colors={colors}
+          spin={spin}
+        />
+      </Suspense>
     </View>
   )
 }
