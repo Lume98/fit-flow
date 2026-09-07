@@ -7,7 +7,7 @@ import { ContactShadows, OrbitControls, PerspectiveCamera } from '@react-three/d
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { RotateCcwIcon, OrbitIcon } from 'lucide-react'
 import { computePoseFrame, type PoseAnimation } from '@/lib/figure'
-import { PIECE_SPECS, poseTo3D, resolvePieces, type Vec3 } from '@/lib/human3d'
+import { PIECE_SPECS, PROFILES, poseTo3D, resolvePieces, type Vec3 } from '@/lib/human3d'
 import type { BreathPattern } from '@/types'
 import { Button } from '@/components/ui/button'
 import { ExerciseFigure } from '@/components/ExerciseFigure'
@@ -33,8 +33,24 @@ export function useBrandColors(): [string, string, string] {
 }
 
 // ── 共享几何体（单位尺寸，靠 mesh scale 适配各部位）────
-const BALL_GEO = new THREE.SphereGeometry(1, 24, 18)
-const LIMB_GEO = new THREE.CylinderGeometry(1, 1, 1, 20, 1)
+const BALL_GEO = new THREE.SphereGeometry(1, 32, 24)
+
+/** 肌肉轮廓旋转曲面缓存：轮廓系数 → 单位长度 lathe 几何（平移居中到原点，mesh 按中点+轴向摆放） */
+const limbGeoCache = new Map<string, THREE.LatheGeometry>()
+function getLimbGeometry(profile: string): THREE.LatheGeometry {
+  let geo = limbGeoCache.get(profile)
+  if (!geo) {
+    const coefficients = PROFILES[profile] ?? [1, 1]
+    const pts = coefficients.map(
+      (c, i) => new THREE.Vector2(Math.max(c, 0), i / (coefficients.length - 1)),
+    )
+    geo = new THREE.LatheGeometry(pts, 32)
+    // lathe 默认 y∈[0,1]，平移到以原点为中心，与中点摆放逻辑一致
+    geo.translate(0, -0.5, 0)
+    limbGeoCache.set(profile, geo)
+  }
+  return geo
+}
 
 const UP = new THREE.Vector3(0, 1, 0)
 const scratchDir = new THREE.Vector3()
@@ -116,10 +132,12 @@ export function FigureContent({
     const cb = new THREE.Color(colors[1])
     return PIECE_SPECS.map(
       (spec) =>
-        new THREE.MeshStandardMaterial({
+        new THREE.MeshPhysicalMaterial({
           color: ca.clone().lerp(cb, spec.t),
-          roughness: 0.38,
-          metalness: 0.08,
+          roughness: 0.42,
+          metalness: 0.05,
+          clearcoat: 0.45,
+          clearcoatRoughness: 0.35,
         }),
     )
   }, [colors])
@@ -156,7 +174,7 @@ export function FigureContent({
         {pieces.map((p, i) => (
           <mesh
             key={p.id}
-            geometry={p.kind === 'limb' ? LIMB_GEO : BALL_GEO}
+            geometry={p.kind === 'limb' ? getLimbGeometry(p.profile) : BALL_GEO}
             material={materials[i]}
             position={p.pos}
             quaternion={quatArray(p.dir)}
