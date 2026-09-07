@@ -5,6 +5,7 @@ import { PartyPopperIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XI
 import { BreathCircle } from '@/components/BreathCircle'
 import { CountdownRing } from '@/components/CountdownRing'
 import HumanFigure3D from '@/components/HumanFigure3D'
+import { MuscleChips } from '@/components/MuscleChips'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -230,6 +231,9 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
           </div>
           {seg.type === 'exercise' && exercise && (
             <div className="mt-1 text-sm font-medium text-primary">{planText(exercise, seg.setIndex, seg.setCount)}</div>
+          )}
+          {seg.type === 'exercise' && exercise && (
+            <MuscleChips poseKey={getPoseEntry(exercise).key} className="mt-1.5" max={5} />
           )}
         </div>
         <div className="flex min-h-0 w-full flex-1 items-center justify-center">

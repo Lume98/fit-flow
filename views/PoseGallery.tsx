@@ -8,6 +8,8 @@ import { ArrowLeftIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { FigureContent, useBrandColors } from '@/components/HumanFigure3D'
+import { MuscleMap } from '@/components/MuscleMap'
+import { MuscleChips } from '@/components/MuscleChips'
 import { POSE_REGISTRY } from '@/data/poses'
 import type { PoseEntry } from '@/data/poses'
 
@@ -113,6 +115,11 @@ export function PoseGallery() {
               </div>
               <div className="mt-1 text-center text-sm font-semibold">{entry.label}</div>
               <div className="mt-0.5 text-center text-xs text-muted-foreground">{entry.plan}</div>
+              <MuscleMap
+                poseKey={entry.key}
+                className="mt-1 h-14 w-16 text-muted-foreground"
+              />
+              <MuscleChips poseKey={entry.key} className="mt-1 max-w-full" max={4} />
             </CardContent>
           </Card>
         ))}
