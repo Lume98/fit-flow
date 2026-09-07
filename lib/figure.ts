@@ -3,6 +3,8 @@
  * 由关键帧插值驱动，可摆出任意动作姿态。具体动作姿态定义见 data/poses.ts。
  */
 
+import type { BreathPattern } from '../types'
+
 export type Pt = [number, number]
 
 export interface Pose {
@@ -177,4 +179,34 @@ export function headAnchor(head: Pt, neck: Pt, headR: number): Pt {
   const len = Math.hypot(dx, dy)
   if (len < 1e-6) return head
   return [head[0] - (dx / len) * headR, head[1] - (dy / len) * headR]
+}
+
+export interface PoseFrame {
+  pose: Pose
+  view: 'side' | 'front'
+  /** 地面高度（归一化 y），无则 null */
+  ground: number | null
+}
+
+/**
+ * 由动画 + 呼吸节拍 + 片段内时刻求当前姿态。
+ * SVG 兜底渲染与 3D 人体模型共用，保证两者动作完全一致。
+ */
+export function computePoseFrame(
+  animation: PoseAnimation,
+  breath: BreathPattern,
+  elapsedMs: number,
+): PoseFrame {
+  const cycleSec = Math.max(0.5, breath.inhaleSec + breath.exhaleSec)
+  const cycles = animation.mode === 'hold' ? 1 : Math.max(1, animation.cyclesPerBreath ?? 1)
+  const cycleMs = (cycleSec * 1000) / cycles
+  const phase = (((elapsedMs % cycleMs) + cycleMs) % cycleMs) / cycleMs
+  const inhaleFrac = breath.inhaleSec / cycleSec
+  const rest = 1 - inhaleFrac
+  const swell = rest > 0 ? (phase < inhaleFrac ? phase / inhaleFrac : 1 - (phase - inhaleFrac) / rest) : 0
+  return {
+    pose: samplePose(animation, phase, inhaleFrac, swell),
+    view: animation.view,
+    ground: animation.ground ?? null,
+  }
 }

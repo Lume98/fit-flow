@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { PartyPopperIcon, PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XIcon } from 'lucide-react'
 import { BreathCircle } from '@/components/BreathCircle'
 import { CountdownRing } from '@/components/CountdownRing'
-import { ExerciseFigure } from '@/components/ExerciseFigure'
+import HumanFigure3D from '@/components/HumanFigure3D'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -234,19 +234,21 @@ export function Player({ workout, settings, onExit, onComplete }: Props) {
         </div>
         <div className="flex min-h-0 w-full flex-1 items-center justify-center">
           {seg.type === 'exercise' && exercise ? (
-            <ExerciseFigure
-              className="h-full max-h-60 w-auto"
+            <HumanFigure3D
+              className="aspect-square h-full max-h-64 w-auto"
               animation={getPoseEntry(exercise).animation}
               breath={exercise.breath}
               elapsedMs={segElapsed}
             />
           ) : (
             nextExercise && (
-              <ExerciseFigure
-                className="h-full max-h-60 w-auto opacity-40 transition-opacity"
+              <HumanFigure3D
+                className="aspect-square h-full max-h-60 w-auto opacity-40 transition-opacity"
                 animation={getPoseEntry(nextExercise).animation}
                 breath={{ inhaleSec: 2, exhaleSec: 2 }}
                 elapsedMs={segElapsed}
+                interactive={false}
+                spin={0.45}
               />
             )
           )}

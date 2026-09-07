@@ -1,7 +1,7 @@
 'use client'
 
 import { useId, useMemo } from 'react'
-import { BONES, headAnchor, isFarBone, samplePose, type Pt } from '@/lib/figure'
+import { BONES, computePoseFrame, headAnchor, isFarBone, type Pt } from '@/lib/figure'
 import type { BreathPattern } from '@/types'
 
 interface Props {
@@ -21,24 +21,15 @@ const px = (pt: Pt, k: 0 | 1): number => Math.round(pt[k] * 1000) / 10
 /**
  * 通用人体模型：按呼吸节拍循环演示动作姿态的火柴人。
  * 姿态数据见 data/poses.ts；帧间插值由 lib/figure.ts 完成。
+ * 现作为 3D 人体模型（HumanFigure3D）在无 WebGL 环境下的兜底渲染。
  */
 export function ExerciseFigure({ animation, breath, elapsedMs, className }: Props) {
   const gradId = useId()
 
-  const { pose, view, groundY } = useMemo(() => {
-    const cycleSec = Math.max(0.5, breath.inhaleSec + breath.exhaleSec)
-    const cycles = animation.mode === 'hold' ? 1 : Math.max(1, animation.cyclesPerBreath ?? 1)
-    const cycleMs = (cycleSec * 1000) / cycles
-    const phase = (((elapsedMs % cycleMs) + cycleMs) % cycleMs) / cycleMs
-    const inhaleFrac = breath.inhaleSec / cycleSec
-    const rest = 1 - inhaleFrac
-    const swell = rest > 0 ? (phase < inhaleFrac ? phase / inhaleFrac : 1 - (phase - inhaleFrac) / rest) : 0
-    return {
-      pose: samplePose(animation, phase, inhaleFrac, swell),
-      view: animation.view,
-      groundY: animation.ground ?? null,
-    }
-  }, [animation, breath, elapsedMs])
+  const { pose, view, ground: groundY } = useMemo(
+    () => computePoseFrame(animation, breath, elapsedMs),
+    [animation, breath, elapsedMs],
+  )
 
   const far = BONES.filter(isFarBone)
   const near = BONES.filter((b) => !isFarBone(b))
